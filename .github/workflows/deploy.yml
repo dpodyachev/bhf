@@ -14,6 +14,8 @@ jobs:
   deploy:
     runs-on: ubuntu-24.04
     steps:
+      - name: Hello
+        run: echo "Привет Денис !"
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
@@ -21,7 +23,7 @@ jobs:
       - name: Deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || '6633214019e0362137d10e619a268fd1' }}   # account ID is not a secret
           WRANGLER_SEND_METRICS: "false"
         run: |
           [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "::error::secret CLOUDFLARE_API_TOKEN missing"; exit 1; }
