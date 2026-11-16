@@ -31,7 +31,7 @@ jobs:
           msg() { grep -oE '"(code|message)": *("[^"]*"|[0-9]+)' | head -4 | tr '\n' ' '; }
           V=$(curl -s https://api.cloudflare.com/client/v4/user/tokens/verify -H "Authorization: Bearer $T")
           V2=$(curl -s "https://api.cloudflare.com/client/v4/accounts/$A/tokens/verify" -H "Authorization: Bearer $T")
-          echo "$V$V2" | grep -qE '"status": *"active"' || { echo "::error::token verify FAILED: user: $(echo "$V" | msg) account: $(echo "$V2" | msg)"; exit 1; }
+          echo "$V$V2" | grep -qE '"status": *"active"' || { echo "::error::token verify FAILED (secret has ${#T} chars, starts with '${T:0:4}' – a Cloudflare token is ~40-53 chars, no quotes, no Bearer prefix): user: $(echo "$V" | msg) account: $(echo "$V2" | msg)"; exit 1; }
           P=$(curl -s "https://api.cloudflare.com/client/v4/accounts/$A/pages/projects/bhf" -H "Authorization: Bearer $T")
           echo "$P" | grep -qE '"success": *true' || { echo "::error::token OK, but no access to Pages project bhf: $(echo "$P" | msg) (needs Account > Cloudflare Pages > Edit on account $A, no IP filter)"; exit 1; }
           echo "::notice::Cloudflare token OK, Pages project bhf reachable"
