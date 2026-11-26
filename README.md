@@ -19,6 +19,23 @@ Assets in `index.html` use content-hash `?v=` – never request a new `?v` befor
 `POST /api/jobs` → job in KV (`JOBS_KV`, key `job:<id>`, TTL 7 days, status `queued`). The page polls every 120 s and offers
 the download as soon as the builder has uploaded the result (R2 bucket `bhf-firmware`, binding `FW_R2`, key `fw/<id>/<file>`).
 
+### Auto-update (devices + agent)
+
+Page `/help/` (`site/help/index.html`, `site/help.js`): create a device (ID + token, token shown once, KV stores its sha256),
+install the agent `site/bhf-agent.py` (served as `https://bhf.pp.ua/bhf-agent.py`, Python stdlib + avrdude) on the computer the
+board is plugged into (Windows / macOS / Ubuntu / Raspberry Pi), publish a finished build to the device on the main page.
+The agent polls `GET /api/devices/<id>` every 60 s, flashes when `current.sha256` changes, checks the Serial line
+`bhf <fw> job <id>` and reports back. Published zips are copied to R2 `dev/<id>/` (outside the 7-day `fw/` lifecycle rule).
+
+| Method | Path (header `Authorization: Bearer <device token>`) | |
+|---|---|---|
+| POST | `/api/devices` (no auth) | `{"name":"…"}` → `{id, token}` |
+| GET | `/api/devices/<id>` | current version + last agent report |
+| POST | `/api/devices/<id>/publish` | `{"job":"<id>"}` → version + 1 |
+| GET | `/api/devices/<id>/firmware` | zip of the current version |
+| POST | `/api/devices/<id>/report` | agent report |
+| DELETE | `/api/devices/<id>` | device + its files |
+
 ### Public API
 
 | Method | Path | |

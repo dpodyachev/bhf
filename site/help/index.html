@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>bhf · автообновление прошивки</title>
+<link rel="stylesheet" href="/app.css?v=593e2c8e">
+<script src="/help.js?v=50820dd7" defer></script>
+</head>
+<body>
+<main class="wrap">
+  <p><a href="/">← Сборка прошивки</a></p>
+  <h1>Автообновление прошивки</h1>
+  <p class="muted">У Arduino Uno нет сети: прошивку на неё всегда записывает компьютер, к которому она подключена по USB.
+  Здесь описано, как сделать, чтобы этот компьютер сам ставил новую версию, как только вы её опубликуете на сайте.
+  Ручная прошивка тоже работает, см. <a href="#manual">ниже</a>.</p>
+
+  <section class="card">
+    <h2>Как это работает</h2>
+    <pre class="flow">bhf.pp.ua                     компьютер у платы                 Arduino Uno
+──────────                    ─────────────────                 ───────────
+1. собрали прошивку
+2. «Опубликовать на
+   устройство» → версия N  ←── bhf-agent раз в минуту:
+                              «есть новая версия?»
+                              да → скачать zip, сверить sha256
+                              → avrdude ───────── USB ─────────→ новая прошивка
+                              ← прочитать Serial ←─────────────── «bhf … job &lt;id&gt;»
+   статус «прошито» ←──────── отчёт</pre>
+    <ul>
+      <li><b>Устройство</b> на сайте = одна плата: у него есть ID и секретный токен. Токен показывается один раз, на сервере хранится только его хеш.</li>
+      <li><b>Агент</b> <code>bhf-agent.py</code> – один файл на Python, без зависимостей, кроме avrdude. Работает на Windows, macOS, Ubuntu/Debian и Raspberry Pi.</li>
+      <li>Агент ставит версию, только если её sha256 отличается от уже прошитой. После 3 неудачных попыток одной версии он ждёт следующую.</li>
+      <li>Загрузчик Uno при прошивке не стирается, так что «окирпичить» плату нельзя: если что-то пошло не так, просто прошейте ещё раз.</li>
+      <li>Опубликованная версия хранится, пока не опубликуете новую или не удалите устройство. Сборки без публикации удаляются через 7 дней.</li>
+    </ul>
+  </section>
+
+  <section class="card" id="device">
+    <h2>Шаг 1. Устройство</h2>
+    <div id="dev-none">
+      <form id="dev-new" class="grid">
+        <label>Название (для себя)<input name="name" maxlength="40" placeholder="Uno на кухне"></label>
+        <button type="submit">Создать устройство</button>
+      </form>
+      <p class="muted">Уже есть устройство? Введите ID и токен:</p>
+      <form id="dev-use" class="grid">
+        <label>ID<input name="id" placeholder="d0123456789" pattern="d[0-9a-f]{10}" required></label>
+        <label>Токен<input name="token" type="password" required autocomplete="off"></label>
+        <button type="submit" class="ghost">Использовать</button>
+      </form>
+    </div>
+    <div id="dev-box" hidden>
+      <p id="dev-token-note" class="warn" hidden>Сохраните токен сейчас – он показывается только один раз. Он нужен агенту и для публикации.</p>
+      <dl>
+        <dt>ID</dt><dd><code id="d-id"></code></dd>
+        <dt>Токен</dt><dd><code id="d-token"></code> <button type="button" id="d-show" class="ghost small">показать</button></dd>
+        <dt>Название</dt><dd id="d-name"></dd>
+        <dt>Опубликовано</dt><dd id="d-cur"></dd>
+        <dt>Агент</dt><dd id="d-rep"></dd>
+      </dl>
+      <p class="row">
+        <button type="button" id="d-refresh" class="ghost">Обновить статус</button>
+        <button type="button" id="d-forget" class="ghost">Забыть в этом браузере</button>
+        <button type="button" id="d-delete" class="ghost">Удалить устройство</button>
+      </p>
+      <p class="muted">ID и токен хранятся только в этом браузере (localStorage) и подставлены в команды ниже.</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Шаг 2. Агент на компьютере у платы</h2>
+    <p class="muted">Команда <code>once</code> проверяет и прошивает один раз – так удобно проверить, что всё работает.
+    Служба (<code>run</code>) делает то же раз в минуту и стартует сама после перезагрузки.</p>
+
+    <details open><summary>Windows 10/11 (PowerShell)</summary>
+<pre class="cmd"># 1. Python и avrdude (один раз)
+winget install -e --id Python.Python.3.12          # или python.org, галочка "Add python.exe to PATH"
+mkdir C:\bhf; cd C:\bhf
+Invoke-WebRequest https://github.com/avrdudes/avrdude/releases/download/v8.3/avrdude-v8.3-windows-x64.zip -OutFile avrdude.zip
+Expand-Archive avrdude.zip -DestinationPath avrdude
+Invoke-WebRequest https://bhf.pp.ua/bhf-agent.py -OutFile bhf-agent.py
+py -m pip install pyserial                           # необязательно: проверка вывода платы после прошивки
+
+# 2. настройка и проверка (порт: py bhf-agent.py ports)
+py bhf-agent.py setup --device DEVICE_ID --token TOKEN --port COM3
+py bhf-agent.py once
+
+# 3. автозапуск при входе в Windows (без прав администратора)
+Set-Content "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\bhf-agent.cmd" 'start "" pyw C:\bhf\bhf-agent.py --log C:\bhf\agent.log run'
+Start-Process pyw -ArgumentList 'C:\bhf\bhf-agent.py','--log','C:\bhf\agent.log','run'
+Get-Content C:\bhf\agent.log -Wait                   # журнал, Ctrl+C – выйти
+
+# остановить / убрать
+Get-Process pythonw | Stop-Process
+Remove-Item "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\bhf-agent.cmd"</pre>
+      <p class="muted">Права администратора не нужны. Нет COM-порта у клона с чипом CH340 – нужен драйвер CH340 (его установка требует прав администратора).
+      Пока агент работает, порт занят: перед ручной прошивкой или монитором порта остановите его.</p>
+    </details>
+
+    <details><summary>Ubuntu / Debian</summary>
+<pre class="cmd"># 1. пакеты и доступ к порту (один раз, нужен sudo)
+sudo apt install -y avrdude python3 python3-serial
+sudo usermod -aG dialout $USER                       # потом выйти и войти (службе это не нужно)
+mkdir -p ~/bhf && cd ~/bhf && curl -fsSLO https://bhf.pp.ua/bhf-agent.py
+
+# 2. настройка и проверка
+python3 bhf-agent.py setup --device DEVICE_ID --token TOKEN
+python3 bhf-agent.py once
+
+# 3. служба systemd (стартует при загрузке, перезапускается при сбое)
+sudo tee /etc/systemd/system/bhf-agent.service &gt;/dev/null &lt;&lt;EOF
+[Unit]
+Description=bhf firmware auto-update agent
+After=network-online.target
+Wants=network-online.target
+[Service]
+User=$USER
+ExecStart=/usr/bin/python3 -u $HOME/bhf/bhf-agent.py --config $HOME/.config/bhf-agent/config.json run
+Restart=always
+RestartSec=30
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now bhf-agent
+journalctl -u bhf-agent -f                           # журнал
+
+# остановить / убрать
+sudo systemctl disable --now bhf-agent</pre>
+      <p class="muted">Порт пропадает сразу после подключения (клоны с CH340)? <code>sudo apt remove brltty</code>.
+      «Permission denied» при <code>once</code> – вы ещё не в группе dialout: выйдите и войдите.</p>
+    </details>
+
+    <details><summary>Raspberry Pi (Raspberry Pi OS)</summary>
+<pre class="cmd"># 1. пакеты (пользователь Pi по умолчанию уже в группе dialout)
+sudo apt update && sudo apt install -y avrdude python3-serial
+mkdir -p ~/bhf && cd ~/bhf && curl -fsSLO https://bhf.pp.ua/bhf-agent.py
+
+# 2. настройка и проверка (Uno обычно /dev/ttyACM0, клоны – /dev/ttyUSB0)
+python3 bhf-agent.py ports
+python3 bhf-agent.py setup --device DEVICE_ID --token TOKEN
+python3 bhf-agent.py once
+
+# 3. служба systemd
+sudo tee /etc/systemd/system/bhf-agent.service &gt;/dev/null &lt;&lt;EOF
+[Unit]
+Description=bhf firmware auto-update agent
+After=network-online.target
+Wants=network-online.target
+[Service]
+User=$USER
+ExecStart=/usr/bin/python3 -u $HOME/bhf/bhf-agent.py --config $HOME/.config/bhf-agent/config.json run
+Restart=always
+RestartSec=30
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now bhf-agent
+journalctl -u bhf-agent -f</pre>
+      <p class="muted">Подходит любая Pi с USB (Zero 2 W через OTG-переходник, 3, 4, 5) и Raspberry Pi OS Lite без экрана, настройка по ssh.
+      Uno питается от USB самой Pi. Пины GPIO не нужны: всё идёт по USB-кабелю.</p>
+    </details>
+
+    <details><summary>macOS</summary>
+<pre class="cmd"># 1. avrdude и Python из Homebrew (https://brew.sh), sudo не нужен
+brew install avrdude python
+mkdir -p ~/bhf && cd ~/bhf && curl -fsSLO https://bhf.pp.ua/bhf-agent.py
+
+# 2. настройка и проверка
+python3 bhf-agent.py setup --device DEVICE_ID --token TOKEN
+python3 bhf-agent.py once
+
+# 3. автозапуск (launchd, при входе в систему)
+cat &gt; ~/Library/LaunchAgents/ua.pp.bhf.agent.plist &lt;&lt;EOF
+&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
+&lt;plist version="1.0"&gt;&lt;dict&gt;
+  &lt;key&gt;Label&lt;/key&gt;&lt;string&gt;ua.pp.bhf.agent&lt;/string&gt;
+  &lt;key&gt;ProgramArguments&lt;/key&gt;&lt;array&gt;
+    &lt;string&gt;$(which python3)&lt;/string&gt;&lt;string&gt;-u&lt;/string&gt;&lt;string&gt;$HOME/bhf/bhf-agent.py&lt;/string&gt;&lt;string&gt;run&lt;/string&gt;
+  &lt;/array&gt;
+  &lt;key&gt;RunAtLoad&lt;/key&gt;&lt;true/&gt;&lt;key&gt;KeepAlive&lt;/key&gt;&lt;true/&gt;
+  &lt;key&gt;StandardOutPath&lt;/key&gt;&lt;string&gt;$HOME/bhf/agent.log&lt;/string&gt;
+  &lt;key&gt;StandardErrorPath&lt;/key&gt;&lt;string&gt;$HOME/bhf/agent.log&lt;/string&gt;
+&lt;/dict&gt;&lt;/plist&gt;
+EOF
+launchctl load ~/Library/LaunchAgents/ua.pp.bhf.agent.plist
+tail -f ~/bhf/agent.log
+
+# остановить / убрать
+launchctl unload ~/Library/LaunchAgents/ua.pp.bhf.agent.plist</pre>
+      <p class="muted">Python с python.org вместо Homebrew: один раз запустите «Install Certificates.command» из папки Python, иначе будет ошибка SSL.</p>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>Шаг 3. Опубликовать прошивку</h2>
+    <ol>
+      <li>На <a href="/">главной</a> соберите прошивку. Под кнопкой «Скачать» появится блок «Опубликовать на устройство», ID и токен там уже подставлены.</li>
+      <li>Нажмите «Опубликовать». Номер версии устройства увеличится на 1.</li>
+      <li>Агент заберёт новую версию в течение 1–2 минут: он проверяет раз в минуту, а сервер может отдавать старый статус до минуты.
+      Нажмите «Обновить статус» выше, чтобы увидеть «прошито» и вывод платы.</li>
+    </ol>
+    <p class="muted">Из командной строки (сборка с ID <code>JOB_ID</code> должна быть готова):</p>
+<pre class="cmd">curl -s -X POST https://bhf.pp.ua/api/devices/DEVICE_ID/publish \
+  -H "Authorization: Bearer TOKEN" -H "content-type: application/json" -d '{"job":"JOB_ID"}'
+curl -s -H "Authorization: Bearer TOKEN" https://bhf.pp.ua/api/devices/DEVICE_ID     # версия и отчёт агента</pre>
+  </section>
+
+  <section class="card" id="manual">
+    <h2>Ручная прошивка (без агента)</h2>
+    <p class="muted">Скачайте zip на главной и распакуйте его. Команды выполняйте в распакованной папке, файл <code>FIRMWARE.hex</code> замените на свой .hex.
+    Если агент запущен, сначала остановите его: порт может занимать только одна программа.</p>
+    <details><summary>Windows (PowerShell)</summary>
+<pre>.\avrdude\avrdude.exe -c arduino -p m328p -P COM3 -b 115200 -U flash:w:FIRMWARE.hex:i
+# вывод платы (UTF-8), Ctrl+C – выйти
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+$s = New-Object System.IO.Ports.SerialPort COM3,115200; $s.Encoding = [Text.Encoding]::UTF8; $s.DtrEnable = $true; $s.Open(); while ($true) { $s.ReadLine() }</pre></details>
+    <details><summary>Ubuntu / Debian и Raspberry Pi</summary>
+<pre>avrdude -c arduino -p m328p -P /dev/ttyACM0 -b 115200 -U flash:w:FIRMWARE.hex:i
+screen -U /dev/ttyACM0 115200        # вывод; выход: Ctrl+A, K, Y  (sudo apt install screen)</pre></details>
+    <details><summary>macOS</summary>
+<pre>avrdude -c arduino -p m328p -P /dev/cu.usbmodem1101 -b 115200 -U flash:w:FIRMWARE.hex:i
+screen -U /dev/cu.usbmodem1101 115200   # выход: Ctrl+A, K, Y</pre></details>
+    <p class="muted">Агент умеет прошить и скачанный файл: он сам найдёт порт и при необходимости повторит на скорости 57600 для старых загрузчиков. Отчёт на сервер он при этом не отправляет.</p>
+<pre>python3 bhf-agent.py flash Downloads/arduino_uno-blink-1a2b3c4d.zip      # Windows: py bhf-agent.py flash ...</pre>
+  </section>
+
+  <section class="card">
+    <h2>Если не работает</h2>
+    <ul>
+      <li><b>«no serial port found»</b>: проверьте кабель (некоторые кабели только для зарядки), выполните <code>bhf-agent.py ports</code>, задайте порт явно: <code>setup … --port COM3</code>.</li>
+      <li><b>«not in sync» / «programmer is not responding»</b>: порт занят (Arduino IDE, монитор порта, второй агент) или у клона старый загрузчик. Агент сам пробует скорость 57600.</li>
+      <li><b>«wrong token»</b>: ID или токен неверны, или устройство удалено. Создайте новое и снова выполните <code>setup</code>.</li>
+      <li><b>«прошито, но Serial не показал job»</b>: прошивка записана, но проверка вывода не прошла. Возможно, порт перехватила другая программа или на Windows не установлен pyserial.</li>
+      <li>Состояние агента: <code>bhf-agent.py status</code>. Подробный журнал: <code>-v</code>. Конфиг с токеном (права только для владельца):
+      Windows <code>%APPDATA%\bhf-agent\config.json</code>, остальные <code>~/.config/bhf-agent/config.json</code>.</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

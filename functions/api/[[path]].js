@@ -7,6 +7,14 @@
 //          GET  /api/builder/jobs/<id>                 -> one job incl. text
 //          POST /api/builder/jobs/<id>/status  {status: building|failed, message?}
 //          PUT  /api/builder/jobs/<id>/artifact?filename=fw.bin   (body = file)  -> status done
+// Devices (auto-update agent, header "Authorization: Bearer <device token>"):
+//          POST /api/devices                   {name?, board?}   -> {id, token} (token shown once, only its sha256 is stored)
+//          GET  /api/devices/<id>              -> current version {version, job, sha256, url} + last report
+//          POST /api/devices/<id>/publish      {job}             -> copies the job's zip to R2 dev/<id>/, version + 1
+//          GET  /api/devices/<id>/firmware     -> zip of the current version
+//          POST /api/devices/<id>/report       {version, job, ok, verified, message, serial}
+//          DELETE /api/devices/<id>
+// Storage: KV JOBS_KV "dev:<id>" (no TTL); R2 "dev/<id>/<version>-<file>" (only the latest kept).
 // Storage: KV JOBS_KV  "job:<id>" (JSON, TTL 7 days); R2 FW_R2 "fw/<id>/<filename>".
 
 const DEVICES = { alexa: "Amazon Alexa", tv: "TV", arduino_uno: "Arduino Uno", esp32: "ESP32", pc_x86_64: "PC x86/64" };
@@ -64,6 +72,29 @@ async function putJob(env, job) {
   });
 }
 
+// ---------- devices ----------
+const hex = (u8) => Array.from(u8, (b) => b.toString(16).padStart(2, "0")).join("");
+const b64url = (u8) => btoa(String.fromCharCode(...u8)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+async function sha256hex(data) {
+  const buf = typeof data === "string" ? new TextEncoder().encode(data) : data;
+  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", buf)));
+}
+async function getDev(env, id) {
+  if (!/^d[0-9a-f]{10}$/.test(id)) return null;
+  return env.JOBS_KV.get("dev:" + id, "json");
+}
+async function putDev(env, dev) {                                     // no TTL: devices stay until deleted
+  await env.JOBS_KV.put("dev:" + dev.id, JSON.stringify(dev));
+}
+function pubDev(dev) {
+  const c = dev.current;
+  return { id: dev.id, name: dev.name, board: dev.board, board_name: DEVICES[dev.board], created: dev.created, seen: dev.seen || null,
+           version: dev.version || 0,
+           current: c ? { version: c.version, job: c.job, filename: c.filename, size: c.size, sha256: c.sha256, firmware: c.firmware,
+                          pin: c.pin, signature: c.signature, published: c.published, url: `/api/devices/${dev.id}/firmware` } : null,
+           report: dev.report || null };
+}
+
 export async function onRequest(ctx) {
   const { request, env, params } = ctx;
   const parts = params.path || [];
@@ -101,6 +132,78 @@ export async function onRequest(ctx) {
           "content-disposition": `attachment; filename="${job.artifact.filename.replace(/"/g, "")}"`,
           "cache-control": "no-store",
         } });
+      }
+      return json({ error: "not found" }, 404);
+    }
+
+    // ---------- devices (auto-update agent) ----------
+    if (parts[0] === "devices") {
+      if (parts.length === 1 && m === "POST") {
+        const b = await request.json().catch(() => ({}));
+        const board = String(b.board || "arduino_uno");
+        if (!PINS[board]) return json({ error: "unsupported board" }, 400);
+        const name = String(b.name || "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 40);
+        const id = "d" + hex(crypto.getRandomValues(new Uint8Array(5)));
+        const token = b64url(crypto.getRandomValues(new Uint8Array(24)));
+        const dev = { id, name, board, token_sha: await sha256hex(token), created: new Date().toISOString(), version: 0, current: null, report: null };
+        await putDev(env, dev);
+        return json({ ...pubDev(dev), token }, 201);                 // the token is shown only here
+      }
+      const dev = await getDev(env, parts[1] || "");
+      const auth = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+      if (!dev || !auth || !same(await sha256hex(auth), dev.token_sha)) return json({ error: "unknown device or wrong token" }, 401);
+      if (parts.length === 2 && m === "GET") {
+        const now = Date.now();
+        if (new URL(request.url).searchParams.get("agent") && (!dev.seen || now - Date.parse(dev.seen) > 3600e3)) {
+          dev.seen = new Date(now).toISOString();                    // at most one KV write per hour (free plan: 1000 writes/day)
+          ctx.waitUntil(putDev(env, dev));
+        }
+        return json(pubDev(dev));
+      }
+      if (parts.length === 2 && m === "DELETE") {
+        const l = await env.FW_R2.list({ prefix: `dev/${dev.id}/` });
+        await Promise.all(l.objects.map((o) => env.FW_R2.delete(o.key)));
+        await env.JOBS_KV.delete("dev:" + dev.id);
+        return json({ deleted: dev.id });
+      }
+      if (parts[2] === "publish" && m === "POST") {
+        const b = await request.json().catch(() => ({}));
+        const job = await withR2(env, await getJob(env, String(b.job || "")));
+        if (!job) return json({ error: "job not found (jobs expire after 7 days)" }, 404);
+        if (job.status !== "done" || !job.artifact) return json({ error: "job is not built yet" }, 409);
+        if (job.device !== dev.board) return json({ error: `job is for ${job.device}, device is ${dev.board}` }, 400);
+        const obj = await env.FW_R2.get(job.artifact.key);
+        if (!obj) return json({ error: "file missing" }, 410);
+        const data = await obj.arrayBuffer();
+        const version = (dev.version || 0) + 1;
+        const key = `dev/${dev.id}/${version}-${job.artifact.filename}`;   // outside fw/ = not removed by the 7-day lifecycle rule
+        await env.FW_R2.put(key, data, { httpMetadata: { contentType: "application/zip" } });
+        const old = await env.FW_R2.list({ prefix: `dev/${dev.id}/` });
+        await Promise.all(old.objects.filter((o) => o.key !== key).map((o) => env.FW_R2.delete(o.key)));
+        dev.version = version;
+        dev.current = { version, job: job.id, key, filename: job.artifact.filename, size: data.byteLength,
+                        sha256: await sha256hex(data), firmware: job.firmware, pin: job.pin, signature: !!job.signature,
+                        published: new Date().toISOString() };
+        await putDev(env, dev);
+        return json(pubDev(dev));
+      }
+      if (parts[2] === "firmware" && m === "GET") {
+        const obj = dev.current && await env.FW_R2.get(dev.current.key);
+        if (!obj) return json({ error: "nothing published" }, 404);
+        return new Response(obj.body, { headers: {
+          "content-type": "application/zip", "content-length": String(obj.size), "cache-control": "no-store",
+          "content-disposition": `attachment; filename="${dev.current.filename.replace(/"/g, "")}"`,
+        } });
+      }
+      if (parts[2] === "report" && m === "POST") {
+        const b = await request.json().catch(() => ({}));
+        dev.report = { at: new Date().toISOString(), version: Number(b.version) || 0, job: String(b.job || "").slice(0, 40),
+                       ok: !!b.ok, verified: b.verified === true ? true : b.verified === false ? false : null,
+                       message: String(b.message || "").slice(0, 500), serial: String(b.serial || "").slice(0, 1000),
+                       host: String(b.host || "").slice(0, 60), os: String(b.os || "").slice(0, 60) };
+        dev.seen = dev.report.at;
+        await putDev(env, dev);
+        return json(pubDev(dev));
       }
       return json({ error: "not found" }, 404);
     }

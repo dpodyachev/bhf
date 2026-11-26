@@ -15,9 +15,12 @@
     new: "Новое задание", howto: "Как прошить (командная строка)",
     howto_intro: "Распакуйте архив, подключите Arduino по USB и выполните команды в распакованной папке (порт замените на свой). Тот же текст есть в FLASH.txt внутри архива.",
     howto_note: "Если avrdude пишет «not in sync»: закройте Arduino IDE и монитор порта; для старых клонов используйте -b 57600. При открытии порта плата перезагружается: сообщение появится сразу, потом каждые 10 миганий.",
+    pub_h: "Опубликовать на устройство (автообновление)", pub_go: "Опубликовать",
+    pub_help: "Как это работает: агент для Windows, macOS, Ubuntu, Raspberry Pi", auto: "Прошивать автоматически при новой версии →",
+    pub_ok: "Опубликована версия {v} на {d}. Агент прошьёт её в течение 1–2 минут.", pub_need: "Нужны ID устройства и токен (создать: /help)",
     queued: "в очереди", building: "собирается", done: "готово", failed: "ошибка", error: "Ошибка: ",
   };
-  var EN = { sig_on: "with signature", queued: "queued", building: "building", done: "done", failed: "failed", error: "Error: " };
+  var EN = { pub_ok: "Version {v} published to {d}. The agent flashes it within 1–2 minutes.", pub_need: "Device ID and token needed (create one: /help)", sig_on: "with signature", queued: "queued", building: "building", done: "done", failed: "failed", error: "Error: " };
   var T = /^(ru|uk)/i.test(navigator.language || "") ? RU : EN;
   if (T === RU) {
     document.documentElement.lang = "ru";
@@ -78,6 +81,8 @@
       if (blobUrl) $("j-dl").setAttribute("download", j.artifact.filename);
       $("j-size").textContent = j.artifact.filename + " · " + (j.artifact.size / 1024).toFixed(1) + " KB";
       howto(j.artifact.filename);
+      $("pub").hidden = !!blobUrl;                       // direct builds are not stored on the server
+      var dv = device(); if (dv && !$("p-id").value) { $("p-id").value = dv.id; $("p-token").value = dv.token; }
       stop(); $("j-next").textContent = "—";
     }
     if (j.status === "failed") { stop(); $("j-next").textContent = "—"; }
@@ -113,6 +118,23 @@
       });
   }
 
+  // publish to a device for the auto-update agent (see /help); ID + token shared with /help via localStorage
+  function device() { try { return JSON.parse(localStorage.getItem("bhf-dev") || "null"); } catch (e) { return null; } }
+  $("p-go").addEventListener("click", function () {
+    var id = $("p-id").value.trim(), token = $("p-token").value.trim(), jid = $("j-id").textContent;
+    if (!id || !token) { $("p-msg").textContent = T.pub_need; return; }
+    $("p-go").disabled = true; $("p-msg").textContent = "…";
+    fetch("/api/devices/" + encodeURIComponent(id) + "/publish", { method: "POST", cache: "no-store",
+          headers: { "content-type": "application/json", authorization: "Bearer " + token }, body: JSON.stringify({ job: jid }) })
+      .then(getJSON)
+      .then(function (d) {
+        try { localStorage.setItem("bhf-dev", JSON.stringify({ id: id, token: token })); } catch (e) {}
+        $("p-msg").textContent = T.pub_ok.replace("{v}", d.version).replace("{d}", d.name || d.id);
+      })
+      .catch(function (e) { $("p-msg").textContent = T.error + e.message; })
+      .then(function () { $("p-go").disabled = false; });
+  });
+
   function stop() { if (timer) clearInterval(timer); timer = null; }
   function start(id) {
     stop(); started = Date.now(); left = FAST;
@@ -144,7 +166,7 @@
   });
   $("new").addEventListener("click", function () {
     stop(); store(null); history.replaceState(null, "", location.pathname);
-    job.hidden = true; $("howto").hidden = true; f.hidden = false;
+    job.hidden = true; $("howto").hidden = true; $("pub").hidden = true; $("p-msg").textContent = ""; f.hidden = false;
     if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; $("j-dl").removeAttribute("download"); }
   });
 
