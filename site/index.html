@@ -5,50 +5,59 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>bhf · firmware builder (test)</title>
-<link rel="stylesheet" href="/app.css">
-<script src="/app.js" defer></script>
+<link rel="stylesheet" href="/app.css?v=2">
+<script src="/app.js?v=2" defer></script>
 </head>
 <body>
 <main class="wrap">
   <h1 data-t="h1">Firmware builder</h1>
-  <p class="muted" data-t="intro">Test page: choose a device and a firmware, add a text – the build runs on a separate builder, this page checks every 2 minutes and offers the download when it is ready.</p>
+  <p class="muted" data-t="intro">Choose a board and a firmware, add a message for the debug console. The firmware is compiled on the server (avr-gcc) in a few seconds; you get a zip with the .hex file, the source and flashing instructions.</p>
 
   <form id="f" class="card" autocomplete="off">
-    <label><span data-t="device">Device</span>
+    <label><span data-t="device">Board</span>
       <select name="device" required>
-        <option value="alexa">Amazon Alexa</option>
-        <option value="tv">TV</option>
-        <option value="arduino_uno">Arduino Uno</option>
-        <option value="esp32" selected>ESP32</option>
-        <option value="pc_x86_64">PC x86/64</option>
+        <option value="arduino_uno" selected>Arduino Uno</option>
+        <option value="esp32" disabled>ESP32 (soon)</option>
+        <option value="alexa" disabled>Amazon Alexa (soon)</option>
+        <option value="tv" disabled>TV (soon)</option>
+        <option value="pc_x86_64" disabled>PC x86/64 (soon)</option>
       </select>
     </label>
     <fieldset>
       <legend data-t="firmware">Firmware</legend>
-      <label class="radio"><input type="radio" name="firmware" value="blink" checked> <span data-t="blink">Blink LED</span></label>
-      <label class="radio"><input type="radio" name="firmware" value="blink_fast"> <span data-t="blink_fast">Blink LED fast</span></label>
+      <label class="radio"><input type="radio" name="firmware" value="blink" checked> <span data-t="blink">Blink LED – every 2 s</span></label>
+      <label class="radio"><input type="radio" name="firmware" value="blink_fast"> <span data-t="blink_fast">Blink LED fast – every 0.5 s</span></label>
     </fieldset>
-    <label><span data-t="text">Text</span>
-      <textarea name="text" rows="6" maxlength="4000" placeholder="…"></textarea>
+    <label><span data-t="text">Message for the debug console (Serial.println)</span>
+      <textarea name="text" rows="5" maxlength="4000" placeholder="Hello from bhf!"></textarea>
       <small class="muted"><span id="cnt">0</span> / 4000</small>
     </label>
-    <button type="submit" id="send" data-t="send">Send</button>
+    <button type="submit" id="send" data-t="send">Build firmware</button>
   </form>
 
   <section id="job" class="card" hidden>
     <h2 data-t="job">Build job</h2>
     <dl>
       <dt>ID</dt><dd><code id="j-id"></code></dd>
-      <dt data-t="device">Device</dt><dd id="j-dev"></dd>
+      <dt data-t="device">Board</dt><dd id="j-dev"></dd>
       <dt data-t="firmware">Firmware</dt><dd id="j-fw"></dd>
       <dt data-t="status">Status</dt><dd><b id="j-status"></b> <span id="j-msg" class="muted"></span></dd>
       <dt data-t="checked">Last check</dt><dd><span id="j-checked"></span> · <span data-t="next">next in</span> <span id="j-next"></span></dd>
     </dl>
-    <p id="j-ready" hidden><a id="j-dl" class="btn" href="#" data-t="download">Download firmware</a> <span id="j-size" class="muted"></span></p>
+    <p id="j-ready" hidden><a id="j-dl" class="btn" href="#" data-t="download">Download firmware (zip)</a> <span id="j-size" class="muted"></span></p>
     <p class="row">
       <button type="button" id="check" class="ghost" data-t="check">Check now</button>
       <button type="button" id="new" class="ghost" data-t="new">New job</button>
     </p>
+  </section>
+
+  <section id="howto" class="card" hidden>
+    <h2 data-t="howto">How to flash (command line)</h2>
+    <p class="muted" data-t="howto_intro">Unzip the archive, connect the Arduino via USB and run in the unzipped folder (replace the port with yours). The same text is in FLASH.txt inside the zip.</p>
+    <details open><summary>Windows (PowerShell)</summary><pre id="h-win"></pre></details>
+    <details><summary>macOS (Terminal)</summary><pre id="h-mac"></pre></details>
+    <details><summary>Ubuntu / Debian</summary><pre id="h-lin"></pre></details>
+    <p class="muted" data-t="howto_note">If avrdude says "not in sync": close Arduino IDE / Serial Monitor; for old clones use -b 57600. Opening the port resets the board, the message appears right away and then every 10 blinks.</p>
   </section>
 </main>
 </body>

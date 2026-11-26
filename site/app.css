@@ -21,3 +21,7 @@ dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margi
 dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; margin: 0; }
 .st-queued { color: #b7791f; } .st-building { color: var(--brand); } .st-done { color: #2f9e44; } .st-failed { color: #d9480f; }
+details { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+summary { cursor: pointer; font-weight: 600; }
+pre { margin: 10px 0 4px; padding: 10px; background: var(--bg); border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.45; white-space: pre; }
+option:disabled { color: var(--muted); }

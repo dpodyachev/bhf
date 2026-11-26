@@ -2,8 +2,9 @@
 // Public:  POST /api/jobs                      {device, firmware, text}  -> {id}
 //          GET  /api/jobs/<id>                 -> job status (no text echo beyond what was sent)
 //          GET  /api/jobs/<id>/download        -> firmware file from R2 (when status = done)
-// Builder (header "Authorization: Bearer <BUILDER_TOKEN>"):
+// Builder (header "Authorization: Bearer <BUILDER_TOKEN or VERCEL_BUILDER_TOKEN>"):
 //          GET  /api/builder/jobs?status=queued        -> list of jobs (oldest first)
+//          GET  /api/builder/jobs/<id>                 -> one job incl. text
 //          POST /api/builder/jobs/<id>/status  {status: building|failed, message?}
 //          PUT  /api/builder/jobs/<id>/artifact?filename=fw.bin   (body = file)  -> status done
 // Storage: KV JOBS_KV  "job:<id>" (JSON, TTL 7 days); R2 FW_R2 "fw/<id>/<filename>".
@@ -88,7 +89,8 @@ export async function onRequest(ctx) {
     // ---------- builder ----------
     if (parts[0] === "builder") {
       const auth = request.headers.get("authorization") || "";
-      if (!env.BUILDER_TOKEN || !same(auth, "Bearer " + env.BUILDER_TOKEN)) return json({ error: "unauthorized" }, 401);
+      const ok = [env.BUILDER_TOKEN, env.VERCEL_BUILDER_TOKEN].some((t) => t && same(auth, "Bearer " + t));
+      if (!ok) return json({ error: "unauthorized" }, 401);
       if (parts[1] === "jobs" && parts.length === 2 && m === "GET") {
         const want = new URL(request.url).searchParams.get("status") || "queued";
         const out = [];
@@ -104,6 +106,7 @@ export async function onRequest(ctx) {
       }
       const job = parts[2] ? await getJob(env, parts[2]) : null;
       if (parts[1] !== "jobs" || !job) return json({ error: "job not found" }, 404);
+      if (parts.length === 3 && m === "GET") return json(job);                    // full job incl. text
       if (parts[3] === "status" && m === "POST") {
         const b = await request.json().catch(() => ({}));
         if (!["queued", "building", "failed"].includes(b.status)) return json({ error: "status must be queued|building|failed" }, 400);
