@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>bhf · firmware builder (test)</title>
 <link rel="stylesheet" href="/app.css?v=593e2c8e">
-<script src="/app.js?v=d3455bfd" defer></script>
+<script src="/app.js?v=762a457e" defer></script>
 </head>
 <body>
 <main class="wrap">
@@ -17,7 +17,12 @@
     <label><span data-t="device">Board</span>
       <select name="device" required>
         <option value="arduino_uno" selected>Arduino Uno</option>
-        <option value="esp32" disabled>ESP32 (soon)</option>
+        <option value="arduino_nano">Arduino Nano</option>
+        <option value="rpi_pico">Raspberry Pi Pico</option>
+        <option value="esp8266">ESP8266 (ESP-12E/F, NodeMCU, D1 mini)</option>
+        <option value="esp32_cam">ESP32-CAM (AI Thinker)</option>
+        <option value="rpi_zero">Raspberry Pi Zero / Zero 2 W</option>
+        <option value="esp32" disabled>ESP32 DevKit (soon)</option>
         <option value="alexa" disabled>Amazon Alexa (soon)</option>
         <option value="tv" disabled>TV (soon)</option>
         <option value="pc_x86_64" disabled>PC x86/64 (soon)</option>
@@ -31,25 +36,8 @@
     <label><span data-t="pin">LED pin</span>
       <select name="pin">
         <option value="13" selected>13 – built-in LED (LED_BUILTIN)</option>
-        <option value="2">2</option>
-        <option value="3">3 (PWM)</option>
-        <option value="4">4</option>
-        <option value="5">5 (PWM)</option>
-        <option value="6">6 (PWM)</option>
-        <option value="7">7</option>
-        <option value="8">8</option>
-        <option value="9">9 (PWM)</option>
-        <option value="10">10 (PWM)</option>
-        <option value="11">11 (PWM)</option>
-        <option value="12">12</option>
-        <option value="14">A0 (14)</option>
-        <option value="15">A1 (15)</option>
-        <option value="16">A2 (16)</option>
-        <option value="17">A3 (17)</option>
-        <option value="18">A4 (18)</option>
-        <option value="19">A5 (19)</option>
       </select>
-      <small class="muted" data-t="pin_hint">13 = the LED on the board. Other pins: LED + 220–330 Ω resistor to GND. 0/1 are taken by Serial.</small>
+      <small class="muted" id="pin-hint">13 = the LED on the board. Other pins: LED + 220–330 Ω resistor to GND. 0/1 are taken by Serial.</small>
     </label>
     <label class="radio"><input type="checkbox" name="signature"> <span data-t="signature">Signature: 5 quick blinks at power-on</span></label>
     <label><span data-t="text">Message for the debug console (Serial.println)</span>
@@ -91,8 +79,9 @@
     <p class="muted" data-t="howto_intro">Unzip the archive, connect the Arduino via USB and run in the unzipped folder (replace the port with yours). The same text is in FLASH.txt inside the zip.</p>
     <details open><summary>Windows (PowerShell)</summary><pre id="h-win"></pre></details>
     <details><summary>macOS (Terminal)</summary><pre id="h-mac"></pre></details>
-    <details><summary>Ubuntu / Debian</summary><pre id="h-lin"></pre></details>
-    <p class="muted" data-t="howto_note">If avrdude says "not in sync": close Arduino IDE / Serial Monitor; for old clones use -b 57600. Opening the port resets the board, the message appears right away and then every 10 blinks.</p>
+    <details><summary id="h-lin-t">Ubuntu / Debian / Raspberry Pi OS</summary><pre id="h-lin"></pre></details>
+    <p class="muted" id="h-board"></p>
+    <p class="muted" id="h-note" data-t="howto_note">If avrdude says "not in sync": close Arduino IDE / Serial Monitor; for old clones use -b 57600. Opening the port resets the board, the message appears right away and then every 10 blinks.</p>
     <p><a href="/help/" data-t="auto">Flash automatically when a new version is published →</a></p>
   </section>
 </main>

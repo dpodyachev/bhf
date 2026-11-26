@@ -17,12 +17,23 @@
 // Storage: KV JOBS_KV "dev:<id>" (no TTL); R2 "dev/<id>/<version>-<file>" (only the latest kept).
 // Storage: KV JOBS_KV  "job:<id>" (JSON, TTL 7 days); R2 FW_R2 "fw/<id>/<filename>".
 
-const DEVICES = { alexa: "Amazon Alexa", tv: "TV", arduino_uno: "Arduino Uno", esp32: "ESP32", pc_x86_64: "PC x86/64" };
+const DEVICES = { alexa: "Amazon Alexa", tv: "TV", arduino_uno: "Arduino Uno", arduino_nano: "Arduino Nano",
+                  rpi_pico: "Raspberry Pi Pico", rpi_zero: "Raspberry Pi Zero / Zero 2 W", esp8266: "ESP8266 (ESP-12E/F)",
+                  esp32_cam: "ESP32-CAM (AI Thinker)", esp32: "ESP32", pc_x86_64: "PC x86/64" };
 const FIRMWARES = { blink: "Blink LED", blink_fast: "Blink LED fast" };
 const TTL = 7 * 24 * 3600;
 const MAX_TEXT = 4000;
 const MAX_ARTIFACT = 50 * 1024 * 1024;
-const PINS = { arduino_uno: { min: 2, max: 19, def: 13 } };          // 0/1 = Serial RX/TX; 14-19 = A0-A5
+const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+const PINS = {                                                       // allowed LED pins, default = on-board LED (same as api/build.py)
+  arduino_uno: { list: range(2, 19), def: 13 },                      // 0/1 = Serial RX/TX; 14-19 = A0-A5
+  arduino_nano: { list: range(2, 19), def: 13 },
+  rpi_pico: { list: [...range(0, 22), 25, 26, 27, 28], def: 25 },
+  esp8266: { list: [2, 4, 5, 12, 13, 14, 16], def: 2 },
+  esp32_cam: { list: [33, 4, 2, 12, 13, 14, 15], def: 33 },
+  rpi_zero: { list: [99, ...range(2, 27)], def: 99 },                // 99 = on-board ACT LED
+};
+const AGENT_BOARDS = ["arduino_uno", "arduino_nano"];                // boards the auto-update agent can flash (avrdude)
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -109,9 +120,10 @@ export async function onRequest(ctx) {
         if (!DEVICES[device]) return json({ error: "unknown device" }, 400);
         if (!FIRMWARES[firmware]) return json({ error: "unknown firmware" }, 400);
         if (text.length > MAX_TEXT) return json({ error: `text longer than ${MAX_TEXT} characters` }, 400);
-        const pr = PINS[device] || { min: 0, max: 99, def: 13 };
-        const pin = b.pin === undefined || b.pin === "" ? pr.def : Number(b.pin);
-        if (!Number.isInteger(pin) || pin < pr.min || pin > pr.max) return json({ error: `pin must be ${pr.min}..${pr.max}` }, 400);
+        const pr = PINS[device];
+        if (!pr) return json({ error: "this board is not supported yet" }, 400);
+        const pin = b.pin === undefined || b.pin === "" || b.pin === null ? pr.def : Number(b.pin);
+        if (!pr.list.includes(pin)) return json({ error: `pin must be one of ${pr.list.join(", ")}` }, 400);
         const signature = b.signature === true || b.signature === "1" || b.signature === "on";
         const now = new Date().toISOString();
         const job = { id: newId(), device, firmware, text, pin, signature, status: "queued", created: now, updated: now,
@@ -136,12 +148,14 @@ export async function onRequest(ctx) {
       return json({ error: "not found" }, 404);
     }
 
+    if (parts[0] === "boards" && m === "GET") return json({ boards: Object.keys(PINS).map((k) => ({ id: k, name: DEVICES[k], pins: PINS[k].list, def: PINS[k].def, agent: AGENT_BOARDS.includes(k) })) });
+
     // ---------- devices (auto-update agent) ----------
     if (parts[0] === "devices") {
       if (parts.length === 1 && m === "POST") {
         const b = await request.json().catch(() => ({}));
         const board = String(b.board || "arduino_uno");
-        if (!PINS[board]) return json({ error: "unsupported board" }, 400);
+        if (!AGENT_BOARDS.includes(board)) return json({ error: "auto-update supports " + AGENT_BOARDS.join(", ") + " for now" }, 400);
         const name = String(b.name || "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 40);
         const id = "d" + hex(crypto.getRandomValues(new Uint8Array(5)));
         const token = b64url(crypto.getRandomValues(new Uint8Array(24)));

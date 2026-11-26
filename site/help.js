@@ -54,7 +54,7 @@
   $("dev-new").addEventListener("submit", function (e) {
     e.preventDefault();
     var b = e.target.querySelector("button"); b.disabled = true;
-    api("POST", "/api/devices", null, { name: e.target.elements.name.value, board: "arduino_uno" })
+    api("POST", "/api/devices", null, { name: e.target.elements.name.value, board: e.target.elements.board.value })
       .then(function (info) { var d = { id: info.id, token: info.token }; put(d); render(info, d, true); })
       .catch(function (err) { alert("Ошибка: " + err.message); })
       .then(function () { b.disabled = false; });

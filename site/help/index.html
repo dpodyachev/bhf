@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>bhf · автообновление прошивки</title>
 <link rel="stylesheet" href="/app.css?v=593e2c8e">
-<script src="/help.js?v=50820dd7" defer></script>
+<script src="/help.js?v=49f0d1d6" defer></script>
 </head>
 <body>
 <main class="wrap">
@@ -15,6 +15,8 @@
   <p class="muted">У Arduino Uno нет сети: прошивку на неё всегда записывает компьютер, к которому она подключена по USB.
   Здесь описано, как сделать, чтобы этот компьютер сам ставил новую версию, как только вы её опубликуете на сайте.
   Ручная прошивка тоже работает, см. <a href="#manual">ниже</a>.</p>
+  <p class="muted">Агент автообновления пока поддерживает <b>Arduino Uno и Nano</b> (avrdude). Pico, ESP8266, ESP32-CAM и Raspberry Pi Zero
+  собираются на главной и прошиваются вручную, инструкция – в архиве (FLASH.txt).</p>
 
   <section class="card">
     <h2>Как это работает</h2>
@@ -41,6 +43,7 @@
     <h2>Шаг 1. Устройство</h2>
     <div id="dev-none">
       <form id="dev-new" class="grid">
+        <label>Плата<select name="board"><option value="arduino_uno">Arduino Uno</option><option value="arduino_nano">Arduino Nano</option></select></label>
         <label>Название (для себя)<input name="name" maxlength="40" placeholder="Uno на кухне"></label>
         <button type="submit">Создать устройство</button>
       </form>
