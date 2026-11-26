@@ -3,7 +3,17 @@
 Site **bhf.pp.ua** – Cloudflare Pages project `bhf`. Static files in `site/`, API in `functions/` (Pages Functions).
 Deploy: push to `main` → GitHub Action (`.github/workflows/deploy.yml`, needs repo secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`).
 
-## Firmware builder (test)
+## Firmware builder
+
+Builder = Vercel function `https://odesa2027.vercel.app/api/build` (repo DmitryPodyachev/vercel.com, `api/build.py`):
+avr-gcc + ArduinoCore-avr, Arduino Uno only for now; `blink` = LED toggles every 2 s, `blink_fast` = every 0.5 s,
+the text is printed to Serial (115200 baud). Result: zip with `.hex`, `FLASH.txt` (avrdude for Windows/macOS/Ubuntu), sketch.
+The page creates the job, then calls the builder with `{"id"}` → builder reads the job (`GET /api/builder/jobs/<id>`),
+builds, uploads the zip to R2. If the Vercel env `BHF_BUILDER_TOKEN` is not set, the builder answers 503 `no_token`
+and the page falls back to a direct build (zip straight to the browser, job stays `queued`).
+Builder token: Pages secret `BUILDER_TOKEN` (or `VERCEL_BUILDER_TOKEN`, optional second one).
+Assets in `index.html` use content-hash `?v=` – never request a new `?v` before the deploy is live (edge caches 4 h).
+
 
 `site/index.html` + `site/app.js`: choose device (Alexa, TV, Arduino Uno, ESP32, PC x86/64), firmware (blink, blink fast) and a text →
 `POST /api/jobs` → job in KV (`JOBS_KV`, key `job:<id>`, TTL 7 days, status `queued`). The page polls every 120 s and offers
