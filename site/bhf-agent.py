@@ -298,7 +298,7 @@ def check(cfg, cfg_path):
         st = {"sha256": cur["sha256"], "version": cur["version"], "job": cur["job"], "filename": cur["filename"],
               "flashed": time.strftime("%Y-%m-%d %H:%M:%S"), "tries": {}}
         log.info("version %s flashed%s", cur["version"],
-                 {True: ", firmware confirmed on Serial", False: ", but Serial did not show the job id", None: ""}[r["verified"]])
+                 {True: ", confirmed by the board output", False: ", but the board output did not show the job id", None: ""}[r["verified"]])
     else:
         st.setdefault("tries", {})[cur["sha256"]] = tries + 1
         log.error("flash failed (%d/%d): %s", tries + 1, MAX_TRIES, r["message"])

@@ -38,7 +38,8 @@
     if (!r) t = info.seen ? "на связи " + when(info.seen) + ", ещё ничего не прошивал" : "ещё не подключался";
     else {
       t = (r.ok ? "✔ прошита версия " + r.version : "✘ ошибка прошивки версии " + r.version) +
-          (r.ok && r.verified === true ? " (подтверждено по Serial)" : r.ok && r.verified === false ? " (Serial не показал job)" : "") +
+          (r.ok && r.verified === true ? (info.board === "rpi_zero" ? " (подтверждено по журналу службы)" : " (подтверждено по Serial)")
+                                        : r.ok && r.verified === false ? " (вывод платы не показал job)" : "") +
           " · " + when(r.at) + (r.host ? " · " + r.host + (r.os ? " (" + r.os + ")" : "") : "") +
           (r.message ? "\n" + r.message : "") + (r.serial ? "\n" + r.serial.trim().split("\n").slice(0, 4).join("\n") : "");
       if (c && r.version < c.version) t = "ждём агента: версия " + c.version + " ещё не прошита\n" + t;
