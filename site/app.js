@@ -7,7 +7,9 @@
   var RU = {
     h1: "Сборка прошивки",
     intro: "Выберите плату и прошивку, добавьте сообщение для debug-консоли. Прошивка компилируется на сервере (avr-gcc) за несколько секунд. Вы получите zip с .hex-файлом, исходником и инструкцией, как прошить.",
-    device: "Плата", firmware: "Прошивка", blink: "Мигать светодиодом – раз в 2 с", blink_fast: "Мигать быстро – раз в 0,5 с",
+    device: "Плата", firmware: "Прошивка", pin: "Пин светодиода",
+    pin_hint: "13 = светодиод на плате. Другие пины: светодиод + резистор 220–330 Ом на GND. 0/1 заняты Serial.",
+    signature: "Подпись: 5 быстрых миганий при включении", sig_on: "с подписью", blink: "Мигать светодиодом – раз в 2 с", blink_fast: "Мигать быстро – раз в 0,5 с",
     text: "Сообщение в debug-консоль (Serial.println)", send: "Собрать прошивку", job: "Задание на сборку", status: "Статус",
     checked: "Последняя проверка", next: "следующая через", download: "Скачать прошивку (zip)", check: "Проверить сейчас",
     new: "Новое задание", howto: "Как прошить (командная строка)",
@@ -15,12 +17,13 @@
     howto_note: "Если avrdude пишет «not in sync»: закройте Arduino IDE и монитор порта; для старых клонов используйте -b 57600. При открытии порта плата перезагружается: сообщение появится сразу, потом каждые 10 миганий.",
     queued: "в очереди", building: "собирается", done: "готово", failed: "ошибка", error: "Ошибка: ",
   };
-  var EN = { queued: "queued", building: "building", done: "done", failed: "failed", error: "Error: " };
+  var EN = { sig_on: "with signature", queued: "queued", building: "building", done: "done", failed: "failed", error: "Error: " };
   var T = /^(ru|uk)/i.test(navigator.language || "") ? RU : EN;
   if (T === RU) {
     document.documentElement.lang = "ru";
     document.querySelectorAll("[data-t]").forEach(function (e) { var k = e.getAttribute("data-t"); if (RU[k]) e.textContent = RU[k]; });
     document.querySelectorAll("option:disabled").forEach(function (o) { o.textContent = o.textContent.replace("(soon)", "(скоро)"); });
+    var o13 = document.querySelector("select[name=pin] option[value='13']"); if (o13) o13.textContent = "13 – светодиод на плате (LED_BUILTIN)";
   }
 
   var $ = function (id) { return document.getElementById(id); };
@@ -42,16 +45,19 @@
       "Expand-Archive avrdude.zip -DestinationPath avrdude\n" +
       "# port\n[System.IO.Ports.SerialPort]::GetPortNames()\n" +
       "# flash\n.\\avrdude\\avrdude.exe " + flash("COM3") + "\n" +
-      "# debug output (Ctrl+C)\n$s = New-Object System.IO.Ports.SerialPort COM3," + BAUD + "; $s.DtrEnable = $true; $s.Open(); while ($true) { $s.ReadLine() }";
+      "# debug output (Ctrl+C), UTF-8\n[Console]::OutputEncoding = [Text.Encoding]::UTF8\n" +
+      "$s = New-Object System.IO.Ports.SerialPort COM3," + BAUD + "; $s.Encoding = [Text.Encoding]::UTF8; $s.DtrEnable = $true; $s.Open(); while ($true) { $s.ReadLine() }\n" +
+      "# no admin rights needed; CH340 clones: driver install needs admin";
     $("h-mac").textContent =
-      "brew install avrdude\nls /dev/cu.usbmodem* /dev/cu.usbserial*\n" +
+      "# no sudo needed\nbrew install avrdude\nls /dev/cu.usbmodem* /dev/cu.usbserial*\n" +
       "avrdude " + flash("/dev/cu.usbmodem1101") + "\n" +
-      "screen /dev/cu.usbmodem1101 " + BAUD + "    # exit: Ctrl+A, K, Y";
+      "screen -U /dev/cu.usbmodem1101 " + BAUD + "    # exit: Ctrl+A, K, Y";
     $("h-lin").textContent =
-      "sudo apt install -y avrdude screen\nsudo usermod -aG dialout $USER   # once, then log out/in\n" +
+      "sudo apt install -y avrdude screen   # needs sudo\nsudo usermod -aG dialout $USER      # once: ports without sudo, then log out/in\n" +
       "ls /dev/ttyACM* /dev/ttyUSB*\n" +
       "avrdude " + flash("/dev/ttyACM0") + "\n" +
-      "screen /dev/ttyACM0 " + BAUD + "    # exit: Ctrl+A, K, Y";
+      "#  \"Permission denied\" = not in dialout yet: log out/in or put sudo in front\n" +
+      "screen -U /dev/ttyACM0 " + BAUD + "    # exit: Ctrl+A, K, Y";
     $("howto").hidden = false;
   }
 
@@ -60,6 +66,7 @@
     $("j-id").textContent = j.id;
     $("j-dev").textContent = j.device_name;
     $("j-fw").textContent = T[j.firmware] || j.firmware_name;
+    $("j-pin").textContent = (j.pin != null ? j.pin : 13) + (j.signature ? " · " + (T.sig_on || "with signature") : "");
     $("j-status").textContent = T[j.status] || j.status;
     $("j-status").className = "st-" + j.status;
     $("j-msg").textContent = j.message && j.message !== "vercel" ? j.message : "";
@@ -90,7 +97,7 @@
         var name = ((r.headers.get("content-disposition") || "").match(/filename="([^"]+)"/) || [])[1] || "firmware.zip";
         return r.blob().then(function (b) {
           blobUrl = URL.createObjectURL(b);
-          show({ id: j.id, device_name: j.device_name, firmware: j.firmware, firmware_name: j.firmware_name,
+          show({ id: j.id, device_name: j.device_name, firmware: j.firmware, firmware_name: j.firmware_name, pin: j.pin, signature: j.signature,
                  status: "done", artifact: { filename: name, size: b.size } });
         });
       });
@@ -120,7 +127,8 @@
   f.addEventListener("submit", function (e) {
     e.preventDefault();
     var fw = f.querySelector("input[name=firmware]:checked");
-    var body = { device: f.elements.device.value, firmware: fw ? fw.value : "", text: f.elements.text.value };
+    var body = { device: f.elements.device.value, firmware: fw ? fw.value : "", text: f.elements.text.value,
+                 pin: Number(f.elements.pin.value), signature: f.elements.signature.checked };
     $("send").disabled = true;
     fetch("/api/jobs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
       .then(getJSON)

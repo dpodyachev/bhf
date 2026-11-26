@@ -1,5 +1,5 @@
 // bhf.pp.ua – firmware build jobs.
-// Public:  POST /api/jobs                      {device, firmware, text}  -> {id}
+// Public:  POST /api/jobs                      {device, firmware, text, pin?, signature?}  -> {id}
 //          GET  /api/jobs/<id>                 -> job status (no text echo beyond what was sent)
 //          GET  /api/jobs/<id>/download        -> firmware file from R2 (when status = done)
 // Builder (header "Authorization: Bearer <BUILDER_TOKEN or VERCEL_BUILDER_TOKEN>"):
@@ -14,6 +14,7 @@ const FIRMWARES = { blink: "Blink LED", blink_fast: "Blink LED fast" };
 const TTL = 7 * 24 * 3600;
 const MAX_TEXT = 4000;
 const MAX_ARTIFACT = 50 * 1024 * 1024;
+const PINS = { arduino_uno: { min: 2, max: 19, def: 13 } };          // 0/1 = Serial RX/TX; 14-19 = A0-A5
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
@@ -32,14 +33,28 @@ function same(a, b) {                                                // constant
 }
 
 function pub(job) {
-  const { id, device, firmware, status, created, updated, message, artifact } = job;
-  return { id, device, device_name: DEVICES[device], firmware, firmware_name: FIRMWARES[firmware], status, created, updated,
+  const { id, device, firmware, status, created, updated, message, artifact, pin, signature } = job;
+  return { id, device, device_name: DEVICES[device], firmware, firmware_name: FIRMWARES[firmware], pin, signature: !!signature,
+           status, created, updated,
            message: message || "", artifact: artifact ? { filename: artifact.filename, size: artifact.size } : null };
 }
 
 async function getJob(env, id) {
   if (!/^[a-z0-9]{8,40}$/.test(id)) return null;
   return env.JOBS_KV.get("job:" + id, "json");
+}
+
+// KV is eventually consistent (stale reads up to ~60 s after the builder finished) – R2 is not:
+// if the artifact is already in R2, the job is done whatever KV still says.
+async function withR2(env, job) {
+  if (!job || job.status === "done" || job.status === "failed") return job;
+  const r = await env.FW_R2.list({ prefix: `fw/${job.id}/`, limit: 1 });
+  const o = r.objects && r.objects[0];
+  if (o) {
+    job.status = "done"; job.message = "";
+    job.artifact = { key: o.key, filename: o.key.split("/").pop(), size: o.size };
+  }
+  return job;
 }
 
 async function putJob(env, job) {
@@ -63,13 +78,17 @@ export async function onRequest(ctx) {
         if (!DEVICES[device]) return json({ error: "unknown device" }, 400);
         if (!FIRMWARES[firmware]) return json({ error: "unknown firmware" }, 400);
         if (text.length > MAX_TEXT) return json({ error: `text longer than ${MAX_TEXT} characters` }, 400);
+        const pr = PINS[device] || { min: 0, max: 99, def: 13 };
+        const pin = b.pin === undefined || b.pin === "" ? pr.def : Number(b.pin);
+        if (!Number.isInteger(pin) || pin < pr.min || pin > pr.max) return json({ error: `pin must be ${pr.min}..${pr.max}` }, 400);
+        const signature = b.signature === true || b.signature === "1" || b.signature === "on";
         const now = new Date().toISOString();
-        const job = { id: newId(), device, firmware, text, status: "queued", created: now, updated: now,
+        const job = { id: newId(), device, firmware, text, pin, signature, status: "queued", created: now, updated: now,
                       ip_country: request.cf?.country || "" };
         await putJob(env, job);
         return json(pub(job), 201);
       }
-      const job = parts[1] ? await getJob(env, parts[1]) : null;
+      const job = await withR2(env, parts[1] ? await getJob(env, parts[1]) : null);
       if (!job) return json({ error: "job not found (jobs expire after 7 days)" }, 404);
       if (parts.length === 2 && m === "GET") return json(pub(job));
       if (parts.length === 3 && parts[2] === "download" && m === "GET") {

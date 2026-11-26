@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>bhf · firmware builder (test)</title>
 <link rel="stylesheet" href="/app.css?v=6e9dcb4d">
-<script src="/app.js?v=5149bcb6" defer></script>
+<script src="/app.js?v=a6914325" defer></script>
 </head>
 <body>
 <main class="wrap">
@@ -28,6 +28,30 @@
       <label class="radio"><input type="radio" name="firmware" value="blink" checked> <span data-t="blink">Blink LED – every 2 s</span></label>
       <label class="radio"><input type="radio" name="firmware" value="blink_fast"> <span data-t="blink_fast">Blink LED fast – every 0.5 s</span></label>
     </fieldset>
+    <label><span data-t="pin">LED pin</span>
+      <select name="pin">
+        <option value="13" selected>13 – built-in LED (LED_BUILTIN)</option>
+        <option value="2">2</option>
+        <option value="3">3 (PWM)</option>
+        <option value="4">4</option>
+        <option value="5">5 (PWM)</option>
+        <option value="6">6 (PWM)</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+        <option value="9">9 (PWM)</option>
+        <option value="10">10 (PWM)</option>
+        <option value="11">11 (PWM)</option>
+        <option value="12">12</option>
+        <option value="14">A0 (14)</option>
+        <option value="15">A1 (15)</option>
+        <option value="16">A2 (16)</option>
+        <option value="17">A3 (17)</option>
+        <option value="18">A4 (18)</option>
+        <option value="19">A5 (19)</option>
+      </select>
+      <small class="muted" data-t="pin_hint">13 = the LED on the board. Other pins: LED + 220–330 Ω resistor to GND. 0/1 are taken by Serial.</small>
+    </label>
+    <label class="radio"><input type="checkbox" name="signature"> <span data-t="signature">Signature: 5 quick blinks at power-on</span></label>
     <label><span data-t="text">Message for the debug console (Serial.println)</span>
       <textarea name="text" rows="5" maxlength="4000" placeholder="Hello from bhf!"></textarea>
       <small class="muted"><span id="cnt">0</span> / 4000</small>
@@ -41,6 +65,7 @@
       <dt>ID</dt><dd><code id="j-id"></code></dd>
       <dt data-t="device">Board</dt><dd id="j-dev"></dd>
       <dt data-t="firmware">Firmware</dt><dd id="j-fw"></dd>
+      <dt data-t="pin">LED pin</dt><dd id="j-pin"></dd>
       <dt data-t="status">Status</dt><dd><b id="j-status"></b> <span id="j-msg" class="muted"></span></dd>
       <dt data-t="checked">Last check</dt><dd><span id="j-checked"></span> · <span data-t="next">next in</span> <span id="j-next"></span></dd>
     </dl>
