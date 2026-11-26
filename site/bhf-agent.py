@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""bhf-agent – keeps an Arduino Uno on the firmware published for it on bhf.pp.ua.
+"""bhf-agent – keeps a board on the firmware published for it on bhf.pp.ua.
 
-Runs on the computer the board is plugged into (Windows, macOS, Ubuntu/Debian, Raspberry Pi OS).
+Arduino Uno / Nano: runs on the computer the board is plugged into (Windows, macOS, Ubuntu/Debian, Raspberry Pi OS).
+Raspberry Pi Zero: runs on the Pi itself (as root) and installs the published program with its install.sh.
 Python 3.8+ standard library only; avrdude must be installed. pyserial is optional
 (used to read the board's Serial output after flashing; without it Linux/macOS still work, Windows skips the check).
 
@@ -32,7 +33,7 @@ import urllib.error
 import urllib.request
 import zipfile
 
-VERSION = "1.0"
+VERSION = "1.1"
 SERVER = "https://bhf.pp.ua"
 BAUD = 115200
 MAX_TRIES = 3            # failed flashes of the same version before the agent waits for a newer one
@@ -213,6 +214,38 @@ def hex_from(data, name):
     raise RuntimeError(f"{name} is neither a zip nor an Intel hex file")
 
 
+def install_linux(data, name, job=None):
+    """Raspberry Pi: unpack the zip, run its install.sh (root), check the service log for the job id."""
+    if WIN or not data[:2] == b"PK":
+        raise RuntimeError(f"{name}: a Raspberry Pi build (zip with install.sh) is expected")
+    with tempfile.TemporaryDirectory(prefix="bhf-") as d:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            for m in z.infolist():                               # flat zip: bhf_blink.py, bhf-blink.service, install.sh
+                if "/" in m.filename or m.filename.startswith("."):
+                    raise RuntimeError(f"unexpected file in zip: {m.filename}")
+            if "install.sh" not in z.namelist():
+                raise RuntimeError("install.sh missing – is this a Raspberry Pi build?")
+            z.extractall(d)
+        cmd = ["sh", "install.sh"] if os.geteuid() == 0 else ["sudo", "-n", "sh", "install.sh"]
+        log.info("installing: %s", " ".join(cmd))
+        try:
+            p = subprocess.run(cmd, cwd=d, capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "verified": None, "message": "install.sh timeout", "serial": ""}
+    out = (p.stdout + p.stderr).strip()
+    if p.returncode != 0:
+        hint = " (run the agent as root, see https://bhf.pp.ua/help/)" if "sudo" in out or "password" in out else ""
+        return {"ok": False, "verified": None, "message": ((out.splitlines() or ["install.sh failed"])[-1] + hint)[:300], "serial": ""}
+    time.sleep(3)
+    j = subprocess.run(["journalctl", "-u", "bhf-blink", "-n", "30", "--no-pager", "-o", "cat"],
+                       capture_output=True, text=True).stdout
+    active = subprocess.run(["systemctl", "is-active", "bhf-blink"], capture_output=True, text=True).stdout.strip()
+    verified = (f"job {job}" in j and active == "active") if job else None
+    log.info("installed %s; service %s; log: %s", name, active, j.strip().splitlines()[-3:])
+    return {"ok": active == "active", "verified": verified, "message": f"{name} installed, service {active}",
+            "serial": j[-1000:]}
+
+
 def flash_bytes(cfg, data, name, job=None):
     """Write the .hex to a temp file, flash, read Serial. -> dict for the report."""
     hexname, hexdata = hex_from(data, name)
@@ -255,7 +288,10 @@ def check(cfg, cfg_path):
     if hashlib.sha256(data).hexdigest() != cur["sha256"]:
         raise RuntimeError("sha256 mismatch – download corrupted, will retry")
     try:
-        r = flash_bytes(cfg, data, cur["filename"], cur["job"])
+        if info.get("board") == "rpi_zero":
+            r = install_linux(data, cur["filename"], cur["job"])
+        else:
+            r = flash_bytes(cfg, data, cur["filename"], cur["job"])
     except RuntimeError as e:
         r = {"ok": False, "verified": None, "message": str(e)[:300], "serial": ""}
     if r["ok"]:
@@ -313,11 +349,15 @@ def main():
         info = api(cfg, "GET", f"/api/devices/{cfg['device']}")          # checks id + token
         save(a.config, cfg, private=True)
         print(f"saved {a.config} – device {info['id']} {info.get('name') or ''} ({info['board_name']})")
-        try:
-            print("avrdude:", find_avrdude(cfg))
-        except RuntimeError as e:
-            print("WARNING:", e)
-        print("ports:", ", ".join(find_ports()) or "none found (plug the board in)")
+        if info["board"] == "rpi_zero":
+            print("Raspberry Pi mode: the agent installs the program on this Pi" +
+                  ("" if os.geteuid() == 0 else " – run it as root (sudo / systemd service, see https://bhf.pp.ua/help/)"))
+        else:
+            try:
+                print("avrdude:", find_avrdude(cfg))
+            except RuntimeError as e:
+                print("WARNING:", e)
+            print("ports:", ", ".join(find_ports()) or "none found (plug the board in)")
     elif a.cmd == "status":
         cfg = need(cfg)
         info = api(cfg, "GET", f"/api/devices/{cfg['device']}")
@@ -328,7 +368,10 @@ def main():
             cfg["port"] = a.port
         with open(a.file, "rb") as fh:
             data = fh.read()
-        r = flash_bytes(cfg, data, os.path.basename(a.file))
+        if data[:2] == b"PK" and "install.sh" in zipfile.ZipFile(io.BytesIO(data)).namelist():
+            r = install_linux(data, os.path.basename(a.file))
+        else:
+            r = flash_bytes(cfg, data, os.path.basename(a.file))
         print(r["message"])
         if r["serial"]:
             print("--- serial ---\n" + r["serial"].strip())

@@ -33,7 +33,7 @@ const PINS = {                                                       // allowed 
   esp32_cam: { list: [33, 4, 2, 12, 13, 14, 15], def: 33 },
   rpi_zero: { list: [99, ...range(2, 27)], def: 99 },                // 99 = on-board ACT LED
 };
-const AGENT_BOARDS = ["arduino_uno", "arduino_nano"];                // boards the auto-update agent can flash (avrdude)
+const AGENT_BOARDS = ["arduino_uno", "arduino_nano", "rpi_zero"];   // auto-update agent: avrdude (Uno, Nano) or on the Pi itself
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });

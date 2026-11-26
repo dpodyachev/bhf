@@ -15,8 +15,9 @@
   <p class="muted">У Arduino Uno нет сети: прошивку на неё всегда записывает компьютер, к которому она подключена по USB.
   Здесь описано, как сделать, чтобы этот компьютер сам ставил новую версию, как только вы её опубликуете на сайте.
   Ручная прошивка тоже работает, см. <a href="#manual">ниже</a>.</p>
-  <p class="muted">Агент автообновления пока поддерживает <b>Arduino Uno и Nano</b> (avrdude). Pico, ESP8266, ESP32-CAM и Raspberry Pi Zero
-  собираются на главной и прошиваются вручную, инструкция – в архиве (FLASH.txt).</p>
+  <p class="muted">Агент автообновления поддерживает <b>Arduino Uno и Nano</b> (через avrdude с компьютера, к которому подключена плата)
+  и <b>Raspberry Pi Zero</b> (агент работает на самой Pi и ставит программу её install.sh). Pico, ESP8266 и ESP32-CAM
+  пока прошиваются вручную, инструкция – в архиве (FLASH.txt).</p>
 
   <section class="card">
     <h2>Как это работает</h2>
@@ -43,7 +44,7 @@
     <h2>Шаг 1. Устройство</h2>
     <div id="dev-none">
       <form id="dev-new" class="grid">
-        <label>Плата<select name="board"><option value="arduino_uno">Arduino Uno</option><option value="arduino_nano">Arduino Nano</option></select></label>
+        <label>Плата<select name="board"><option value="arduino_uno">Arduino Uno</option><option value="arduino_nano">Arduino Nano</option><option value="rpi_zero">Raspberry Pi Zero / Zero 2 W</option></select></label>
         <label>Название (для себя)<input name="name" maxlength="40" placeholder="Uno на кухне"></label>
         <button type="submit">Создать устройство</button>
       </form>
@@ -167,6 +168,40 @@ journalctl -u bhf-agent -f</pre>
       Uno питается от USB самой Pi. Пины GPIO не нужны: всё идёт по USB-кабелю.</p>
     </details>
 
+    <details><summary>Raspberry Pi Zero / Zero 2 W – агент на самой Pi</summary>
+<pre class="cmd"># Устройство на шаге 1 – с платой «Raspberry Pi Zero». Raspberry Pi OS (Lite подходит), по ssh.
+# Python уже есть, avrdude не нужен. Агент работает от root: ставит службу bhf-blink и управляет светодиодом.
+sudo mkdir -p /opt/bhf-agent && cd /opt/bhf-agent
+sudo curl -fsSLO https://bhf.pp.ua/bhf-agent.py
+sudo python3 bhf-agent.py --config /etc/bhf-agent.json setup --device DEVICE_ID --token TOKEN
+sudo python3 bhf-agent.py --config /etc/bhf-agent.json once      # ставит опубликованную версию
+
+# служба: проверяет раз в минуту, стартует при загрузке
+sudo tee /etc/systemd/system/bhf-agent.service &gt;/dev/null &lt;&lt;EOF
+[Unit]
+Description=bhf firmware auto-update agent
+After=network-online.target
+Wants=network-online.target
+[Service]
+ExecStart=/usr/bin/python3 -u /opt/bhf-agent/bhf-agent.py --config /etc/bhf-agent.json run
+Restart=always
+RestartSec=30
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now bhf-agent
+journalctl -u bhf-agent -f                # агент
+journalctl -u bhf-blink -f                # сама «прошивка»: сообщение и blink N
+
+# остановить агента (программа bhf-blink продолжит работать)
+sudo systemctl disable --now bhf-agent
+# убрать и программу: sudo systemctl disable --now bhf-blink</pre>
+      <p class="muted">После установки агент проверяет, что служба bhf-blink запущена и в её журнале есть строка с ID задания, и отправляет отчёт на сайт.
+      Ручной вариант без агента: скачать zip на главной, перенести на Pi и выполнить <code>sudo sh install.sh</code>
+      (или <code>sudo python3 bhf-agent.py flash файл.zip</code>).</p>
+    </details>
+
     <details><summary>macOS</summary>
 <pre class="cmd"># 1. avrdude и Python из Homebrew (https://brew.sh), sudo не нужен
 brew install avrdude python
@@ -215,7 +250,7 @@ curl -s -H "Authorization: Bearer TOKEN" https://bhf.pp.ua/api/devices/DEVICE_ID
 
   <section class="card" id="manual">
     <h2>Ручная прошивка (без агента)</h2>
-    <p class="muted">Скачайте zip на главной и распакуйте его. Команды выполняйте в распакованной папке, файл <code>FIRMWARE.hex</code> замените на свой .hex.
+    <p class="muted">Raspberry Pi Zero: см. FLASH.txt в архиве (scp + <code>sudo sh install.sh</code>). Arduino: скачайте zip на главной и распакуйте его. Команды выполняйте в распакованной папке, файл <code>FIRMWARE.hex</code> замените на свой .hex.
     Если агент запущен, сначала остановите его: порт может занимать только одна программа.</p>
     <details><summary>Windows (PowerShell)</summary>
 <pre>.\avrdude\avrdude.exe -c arduino -p m328p -P COM3 -b 115200 -U flash:w:FIRMWARE.hex:i

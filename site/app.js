@@ -51,7 +51,7 @@
     esp32_cam: { kind: "esp", pins: [33, 4, 2, 12, 13, 14, 15], def: 33,
       label: function (p) { return "GPIO" + p + (p === 33 ? (ru ? " – красный светодиод сзади" : " – red LED on the back") : p === 4 ? (ru ? " – белая вспышка (очень ярко!)" : " – white flash LED (very bright!)") : ""); },
       hint: (ru ? "GPIO33 = маленький красный светодиод (горит при LOW), GPIO4 = вспышка камеры. " : "GPIO33 = small red LED (lit when LOW), GPIO4 = camera flash. ") + ext },
-    rpi_zero: { kind: "linux", pins: [99].concat(range(2, 27)), def: 99,
+    rpi_zero: { kind: "linux", pins: [99].concat(range(2, 27)), def: 99, agent: true,
       label: function (p) { return p === 99 ? (ru ? "ACT – зелёный светодиод на плате" : "ACT – green on-board LED") : "GPIO" + p + (ru ? " (контакт " : " (pin ") + PIHDR[p] + ")"; },
       hint: ru ? "ACT = светодиод на плате. GPIO – нумерация BCM, в скобках номер контакта на гребёнке. Светодиод + резистор 220–330 Ом на GND."
                : "ACT = the on-board LED. GPIO = BCM numbering, in brackets the header pin. LED + 220–330 Ω resistor to GND." },

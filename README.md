@@ -8,7 +8,7 @@ Deploy: push to `main` → GitHub Action (`.github/workflows/deploy.yml`, needs 
 Builder = Vercel function `https://odesa2027.vercel.app/api/build` (repo DmitryPodyachev/vercel.com, `api/build.py`).
 Boards: Arduino Uno, Arduino Nano (avr-gcc + ArduinoCore-avr per job), Raspberry Pi Pico (.uf2), ESP8266 ESP-12E/F, ESP32-CAM
 (template firmware with a patched config block), Raspberry Pi Zero (Python + systemd); pin lists per board in `PINS`
-(functions) = `DEVICES` (api/build.py) = `BOARDS` (site/app.js), `GET /api/boards`. Auto-update agent: Uno / Nano only.
+(functions) = `DEVICES` (api/build.py) = `BOARDS` (site/app.js), `GET /api/boards`. Auto-update agent: Uno / Nano (avrdude) and Raspberry Pi Zero (agent on the Pi, runs install.sh as root).
  `blink` = LED toggles every 2 s, `blink_fast` = every 0.5 s,
 the text is printed to Serial (115200 baud). Result: zip with `.hex`, `FLASH.txt` (avrdude for Windows/macOS/Ubuntu), sketch.
 The page creates the job, then calls the builder with `{"id"}` → builder reads the job (`GET /api/builder/jobs/<id>`),
