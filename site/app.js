@@ -137,7 +137,8 @@
     $("j-id").textContent = j.id;
     $("j-dev").textContent = j.device_name;
     $("j-fw").textContent = T[j.firmware] || j.firmware_name;
-    $("j-pin").textContent = (j.pin != null ? j.pin : 13) + (j.signature ? " · " + (T.sig_on || "with signature") : "");
+    var bd = board(j.device), pn = j.pin != null ? j.pin : bd.def;
+    $("j-pin").textContent = (bd.pins.indexOf(pn) >= 0 ? bd.label(pn) : pn) + (j.signature ? " · " + (T.sig_on || "with signature") : "");
     $("j-status").textContent = T[j.status] || j.status;
     $("j-status").className = "st-" + j.status;
     $("j-msg").textContent = j.message && j.message !== "vercel" ? j.message : "";
